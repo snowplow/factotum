@@ -12,19 +12,21 @@ jobs:
     name: Compile & Test
     strategy:
       matrix:
-        os: [ubuntu-18.04]
+        os: [ubuntu-latest]
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     runs-on: ${{ matrix.os }}
 
     steps:
     - name: Install latest rust toolchain
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: "1.78.0"
+        target: ${{ matrix.target }}
         default: true
         override: true
 
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Test
       run: make test
@@ -32,26 +34,27 @@ jobs:
     - name: Build
       run: make debug
 
-    - uses: Swatinem/rust-cache@v1
+    - uses: Swatinem/rust-cache@v2
 
   macos:
     name: Compile & Test
     strategy:
       matrix:
-        os: [macos-10.15]
+        os: [macos-latest]
+        target: [x86_64-apple-darwin, aarch64-apple-darwin]
     runs-on: ${{ matrix.os }}
 
     steps:
     - name: Install latest rust toolchain
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
-        target: x86_64-apple-darwin
+        toolchain: "1.78.0"
+        target: ${{ matrix.target }}
         default: true
         override: true
 
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Test
       run: make test
@@ -59,4 +62,4 @@ jobs:
     - name: Build
       run: make debug
 
-    - uses: Swatinem/rust-cache@v1
+    - uses: Swatinem/rust-cache@v2
