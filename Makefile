@@ -26,7 +26,7 @@ zip: release check-env
 ifeq ($(version),$(BUILD_VERSION))
 	mkdir -p $(compiled_dir)
 	(cd target/release && zip -r staging.zip factotum)
-	mv target/release/staging.zip $(compiled_dir)/factotum_$(version)_$(PLATFORM)_x86_64.zip
+	mv target/release/staging.zip $(compiled_dir)/factotum_$(version)_$(PLATFORM)_$(ARCH).zip
 else
 	$(error BUILD_VERSION and Cargo.toml version do not match - cannot release)
 endif
@@ -48,6 +48,9 @@ ifndef PLATFORM
 endif
 ifndef BUILD_VERSION
 	$(error BUILD_VERSION is undefined)
+endif
+ifndef ARCH
+	$(error ARCH is undefined)
 endif
 
 # -----------------------------------------------------------------------------
