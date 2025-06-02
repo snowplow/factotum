@@ -12,14 +12,14 @@ jobs:
     name: Compile & Test
     strategy:
       matrix:
-        os: [ubuntu-18.04]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
     - name: Install latest rust toolchain
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: "1.78.0"
         default: true
         override: true
 
@@ -38,14 +38,14 @@ jobs:
     name: Compile & Test
     strategy:
       matrix:
-        os: [macos-10.15]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
     - name: Install latest rust toolchain
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: "1.78.0"
         target: x86_64-apple-darwin
         default: true
         override: true
