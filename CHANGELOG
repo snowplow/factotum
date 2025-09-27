@@ -1,3 +1,7 @@
+Version 0.6.2 (2025-09-27)
+--------------------------
+Enable support of OpenSSL 3.0 so that Factotum will run on Ubuntu Jammy and later releases (#136)
+
 Version 0.6.1 (2025-06-02)
 --------------------------
 Update build process to release for arm64 (#134)

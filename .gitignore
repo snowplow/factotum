@@ -18,3 +18,5 @@ Cargo.lock
 
 # Project
 build/
+
+.DS_Store

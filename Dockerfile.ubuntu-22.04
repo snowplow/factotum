@@ -1,0 +1,33 @@
+FROM ubuntu:22.04
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust 1.78.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.78.0
+ENV PATH="/root/.cargo/bin:$PATH"
+
+# Set working directory
+WORKDIR /factotum
+
+# Copy project files
+COPY . .
+
+# Build and test
+ENV RUSTFLAGS="-A warnings"
+CMD echo "========================================" && \
+    echo "Running tests on Ubuntu 22.04" && \
+    echo "Rust version: $(rustc --version)" && \
+    echo "OpenSSL version: $(openssl version)" && \
+    echo "Architecture: $(uname -m)" && \
+    echo "========================================" && \
+    cargo test --verbose

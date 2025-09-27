@@ -1,0 +1,44 @@
+services:
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+    container_name: factotum-build
+    volumes:
+      - .:/factotum
+      - cargo-cache:/root/.cargo/registry
+      - build-output:/factotum/target
+
+  test-ubuntu-18-04:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-ubuntu-18.04
+    container_name: factotum-test-ubuntu-18.04
+    volumes:
+      - build-output:/tmp/build:ro
+    depends_on:
+      - build
+
+  test-ubuntu-22-04:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-ubuntu-22.04
+    container_name: factotum-test-ubuntu-22.04
+    volumes:
+      - build-output:/tmp/build:ro
+    depends_on:
+      - build
+
+  test-ubuntu-24-04:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-ubuntu-24.04
+    container_name: factotum-test-ubuntu-24.04
+    volumes:
+      - build-output:/tmp/build:ro
+    depends_on:
+      - build
+
+volumes:
+  cargo-cache:
+  build-output:
