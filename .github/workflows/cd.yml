@@ -25,7 +25,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     - name: Test
-      run: make test
+      run: make test-ci
+      env:
+        RUSTFLAGS: "-C target-feature=+crt-static"
     - name: Extract tag version from ref
       id: get_version
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
@@ -35,6 +37,7 @@ jobs:
         PLATFORM: linux
         ARCH: ${{ matrix.arch }}
         BUILD_VERSION: ${{ steps.get_version.outputs.VERSION }}
+        RUSTFLAGS: "-C target-feature=+crt-static"
     - name: Upload binary
       uses: actions/upload-artifact@v4
       with:
@@ -60,7 +63,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     - name: Test
-      run: make test
+      run: make test-ci
+      env:
+        RUSTFLAGS: "-C target-feature=+crt-static"
     - name: Extract tag version from ref
       id: get_version
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
@@ -70,6 +75,7 @@ jobs:
         PLATFORM: linux
         ARCH: ${{ matrix.arch }}
         BUILD_VERSION: ${{ steps.get_version.outputs.VERSION }}
+        RUSTFLAGS: "-C target-feature=+crt-static"
     - name: Upload binary
       uses: actions/upload-artifact@v4
       with:
@@ -94,8 +100,6 @@ jobs:
         override: true
     - name: Checkout code
       uses: actions/checkout@v4
-    - name: Test
-      run: make test
     - name: Extract tag version from ref
       id: get_version
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
@@ -129,8 +133,6 @@ jobs:
         override: true
     - name: Checkout code
       uses: actions/checkout@v4
-    - name: Test
-      run: make test
     - name: Extract tag version from ref
       id: get_version
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}

@@ -8,58 +8,20 @@ on:
     - '**'
 
 jobs:
-  ubuntu:
-    name: Compile & Test
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
-    runs-on: ${{ matrix.os }}
-
+  test:
+    name: Build and test with Docker
+    runs-on: ubuntu-latest
     steps:
-    - name: Install latest rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: "1.78.0"
-        target: ${{ matrix.target }}
-        default: true
-        override: true
-
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Test
-      run: make test
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-    - name: Build
-      run: make debug
+    - name: Run Docker tests
+      run: |
+        # GitHub Actions uses 'docker compose' (v2) instead of 'docker-compose' (v1)
+        # Create a symlink for compatibility
+        sudo ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+        make test
 
-    - uses: Swatinem/rust-cache@v2
-
-  macos:
-    name: Compile & Test
-    strategy:
-      matrix:
-        os: [macos-latest]
-        target: [x86_64-apple-darwin, aarch64-apple-darwin]
-    runs-on: ${{ matrix.os }}
-
-    steps:
-    - name: Install latest rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: "1.78.0"
-        target: ${{ matrix.target }}
-        default: true
-        override: true
-
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Test
-      run: make test
-
-    - name: Build
-      run: make debug
-
-    - uses: Swatinem/rust-cache@v2

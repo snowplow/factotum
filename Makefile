@@ -1,4 +1,4 @@
-.PHONY: debug release zip test check-env clean
+.PHONY: debug release zip test test-docker test-docker-18 test-docker-22 test-docker-24 check-env clean
 
 # -----------------------------------------------------------------------------
 #  CONSTANTS
@@ -35,8 +35,49 @@ endif
 #  TESTING
 # -----------------------------------------------------------------------------
 
-test:
+# Local tests - builds with static linking, then tests on all Ubuntu versions
+test: test-docker
+
+# Direct cargo test - for CI/CD environments that already have correct Rust
+test-ci:
+	@echo "========================================"
+	@echo "Running tests in CI environment"
+	@rustc --version
+	@echo "========================================"
 	cargo test --verbose
+
+# Build and test on all Ubuntu versions via Docker
+test-docker: test-docker-clean test-docker-build test-docker-18 test-docker-22 test-docker-24
+	@echo "========================================"
+	@echo "All Docker tests completed successfully!"
+	@echo "========================================"
+
+test-docker-clean:
+	@docker-compose down --remove-orphans 2>/dev/null || true
+
+test-docker-build:
+	@echo "========================================"
+	@echo "Building with Rust 1.78.0 + static linking"
+	@echo "========================================"
+	docker-compose up --build --abort-on-container-exit build
+
+test-docker-18:
+	@echo "========================================"
+	@echo "Testing binary on Ubuntu 18.04"
+	@echo "========================================"
+	docker-compose up --build --abort-on-container-exit test-ubuntu-18-04
+
+test-docker-22:
+	@echo "========================================"
+	@echo "Testing binary on Ubuntu 22.04"
+	@echo "========================================"
+	docker-compose up --build --abort-on-container-exit test-ubuntu-22-04
+
+test-docker-24:
+	@echo "========================================"
+	@echo "Testing binary on Ubuntu 24.04"
+	@echo "========================================"
+	docker-compose up --build --abort-on-container-exit test-ubuntu-24-04
 
 # -----------------------------------------------------------------------------
 #  HELPERS
