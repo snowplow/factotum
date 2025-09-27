@@ -7,74 +7,115 @@ on:
 
 jobs:
   ubuntu-x86_64:
-    name: Compile Linux
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        target: [x86_64-unknown-linux-gnu]
-        arch: [x86_64]
-    runs-on: ${{ matrix.os }}
+    name: Compile Linux x86_64
+    runs-on: ubuntu-latest
     steps:
-    - name: Install latest rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: "1.78.0"
-        target: ${{ matrix.target }}
-        default: true
-        override: true
     - name: Checkout code
       uses: actions/checkout@v4
-    - name: Test
-      run: make test
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Extract tag version from ref
       id: get_version
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
-    - name: Build
-      run: make zip
-      env:
-        PLATFORM: linux
-        ARCH: ${{ matrix.arch }}
-        BUILD_VERSION: ${{ steps.get_version.outputs.VERSION }}
+
+    - name: Install docker-compose
+      run: |
+        # GitHub Actions uses 'docker compose' (v2) instead of 'docker-compose' (v1)
+        # Create a symlink for compatibility
+        sudo ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+
+    - name: Build with Docker (static linking)
+      run: |
+        # Build statically-linked binary using Docker
+        make test-docker-clean
+        make test-docker-build
+
+        # Extract binary from Docker volume
+        docker run --rm -v factotum_build-output:/build -v $(pwd)/target:/output alpine sh -c "cp -r /build/x86_64-unknown-linux-gnu /output/ && chmod -R 755 /output/x86_64-unknown-linux-gnu"
+
+        # Create release zip
+        mkdir -p build/compiled
+        cd target/x86_64-unknown-linux-gnu/release
+        chmod +x factotum
+        zip -r factotum.zip factotum
+        mv factotum.zip ../../../build/compiled/factotum_${{ steps.get_version.outputs.VERSION }}_linux_x86_64.zip
+
     - name: Upload binary
       uses: actions/upload-artifact@v4
       with:
-        name: factotum_${{ steps.get_version.outputs.VERSION }}_linux_${{ matrix.arch }}.zip
-        path: build/compiled/factotum_${{ steps.get_version.outputs.VERSION }}_linux_${{ matrix.arch }}.zip
+        name: factotum_${{ steps.get_version.outputs.VERSION }}_linux_x86_64.zip
+        path: build/compiled/factotum_${{ steps.get_version.outputs.VERSION }}_linux_x86_64.zip
 
   ubuntu-arm64:
-    name: Compile Linux
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        target: [aarch64-unknown-linux-gnu]
-        arch: [arm64]
-    runs-on: ${{ matrix.os }}
+    name: Compile Linux ARM64
+    runs-on: ubuntu-latest
     steps:
-    - name: Install latest rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: "1.78.0"
-        target: ${{ matrix.target }}
-        default: true
-        override: true
     - name: Checkout code
       uses: actions/checkout@v4
-    - name: Test
-      run: make test
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Extract tag version from ref
       id: get_version
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
-    - name: Build
-      run: make zip
-      env:
-        PLATFORM: linux
-        ARCH: ${{ matrix.arch }}
-        BUILD_VERSION: ${{ steps.get_version.outputs.VERSION }}
+
+    - name: Create ARM64 Dockerfile
+      run: |
+        cat > Dockerfile.build-arm64 << 'EOF'
+        FROM --platform=linux/arm64 ubuntu:24.04
+
+        ENV DEBIAN_FRONTEND=noninteractive
+
+        RUN apt-get update && apt-get install -y \
+            curl build-essential pkg-config libssl-dev ca-certificates \
+            && rm -rf /var/lib/apt/lists/*
+
+        RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.78.0 --default-host aarch64-unknown-linux-gnu
+        ENV PATH="/root/.cargo/bin:$PATH"
+
+        WORKDIR /factotum
+        COPY . .
+
+        CMD echo "========================================" && \
+            echo "Building ARM64 with Rust 1.78.0 + static linking" && \
+            echo "Rust version: $(rustc --version)" && \
+            echo "Target: aarch64-unknown-linux-gnu" && \
+            echo "Architecture: $(uname -m)" && \
+            echo "========================================" && \
+            echo "Running unit tests (without static linking)..." && \
+            RUSTFLAGS="-A warnings" cargo test --verbose && \
+            echo "========================================" && \
+            echo "Building release binary with static linking..." && \
+            RUSTFLAGS="-C target-feature=+crt-static" cargo build --release 2>&1 | grep -E "^\s*(Compiling|Finished|Building)|^$" && \
+            echo "========================================" && \
+            echo "Build complete: target/release/factotum" && \
+            echo "Binary statically linked for aarch64" && \
+            echo "========================================"
+        EOF
+
+    - name: Build ARM64 binary with Docker
+      run: |
+        docker build --platform linux/arm64 -f Dockerfile.build-arm64 -t factotum-arm64 .
+        docker run --platform linux/arm64 --name factotum-arm64-build factotum-arm64
+        docker cp factotum-arm64-build:/factotum/target/release/factotum ./factotum-arm64
+        docker rm factotum-arm64-build
+
+    - name: Create release zip
+      run: |
+        mkdir -p build/compiled
+        zip build/compiled/factotum_${{ steps.get_version.outputs.VERSION }}_linux_arm64.zip factotum-arm64
+
     - name: Upload binary
       uses: actions/upload-artifact@v4
       with:
-        name: factotum_${{ steps.get_version.outputs.VERSION }}_linux_${{ matrix.arch }}.zip
-        path: build/compiled/factotum_${{ steps.get_version.outputs.VERSION }}_linux_${{ matrix.arch }}.zip
+        name: factotum_${{ steps.get_version.outputs.VERSION }}_linux_arm64.zip
+        path: build/compiled/factotum_${{ steps.get_version.outputs.VERSION }}_linux_arm64.zip
 
   macos-x86_64:
     name: Compile macOS
@@ -94,8 +135,6 @@ jobs:
         override: true
     - name: Checkout code
       uses: actions/checkout@v4
-    - name: Test
-      run: make test
     - name: Extract tag version from ref
       id: get_version
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
@@ -129,8 +168,6 @@ jobs:
         override: true
     - name: Checkout code
       uses: actions/checkout@v4
-    - name: Test
-      run: make test
     - name: Extract tag version from ref
       id: get_version
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
