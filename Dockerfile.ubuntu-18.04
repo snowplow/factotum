@@ -1,0 +1,32 @@
+FROM ubuntu:18.04
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust 1.70.0 (glibc 2.27 compatibility)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.70.0
+ENV PATH="/root/.cargo/bin:$PATH"
+
+# Set working directory
+WORKDIR /factotum
+
+# Copy project files
+COPY . .
+
+# Build and test
+ENV RUSTFLAGS="-A warnings"
+CMD echo "========================================" && \
+    echo "Running tests on Ubuntu 18.04" && \
+    echo "Rust version: $(rustc --version)" && \
+    echo "Architecture: $(uname -m)" && \
+    echo "========================================" && \
+    cargo test --verbose

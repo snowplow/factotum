@@ -1,0 +1,21 @@
+FROM ubuntu:24.04
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Set working directory
+WORKDIR /factotum
+
+# Copy and test the binary
+CMD echo "========================================" && \
+    echo "Testing binary on Ubuntu 24.04" && \
+    cat /etc/os-release && \
+    echo "glibc version: $(ldd --version | head -n1)" && \
+    echo "OpenSSL version: $(openssl version 2>/dev/null || echo 'not installed')" && \
+    echo "========================================" && \
+    cp /tmp/build/x86_64-unknown-linux-gnu/release/factotum /factotum/factotum && \
+    chmod +x /factotum/factotum && \
+    /factotum/factotum --help || test $? -eq 3 && \
+    echo "========================================" && \
+    echo "Binary works on Ubuntu 24.04!" && \
+    echo "========================================"
