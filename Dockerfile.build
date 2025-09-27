@@ -1,0 +1,42 @@
+FROM --platform=linux/amd64 ubuntu:24.04
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust 1.78.0 for x86_64
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.78.0 --default-host x86_64-unknown-linux-gnu
+ENV PATH="/root/.cargo/bin:$PATH"
+RUN rustup target add x86_64-unknown-linux-gnu
+
+# Set working directory
+WORKDIR /factotum
+
+# Copy project files
+COPY . .
+
+# Build and test
+CMD echo "========================================" && \
+    echo "Building with Rust 1.78.0 + static linking (x86_64)" && \
+    echo "Rust version: $(rustc --version)" && \
+    echo "Target: x86_64-unknown-linux-gnu" && \
+    echo "Architecture: $(uname -m)" && \
+    echo "========================================" && \
+    echo "Running unit tests (without static linking)..." && \
+    RUSTFLAGS="-A warnings" cargo test --verbose && \
+    echo "========================================" && \
+    echo "Building release binary with static linking..." && \
+    echo "========================================" && \
+    RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu 2>&1 | grep -E "^\s*(Compiling|Finished|Building)|^$" && \
+    echo "========================================" && \
+    echo "Build complete: target/x86_64-unknown-linux-gnu/release/factotum" && \
+    echo "Binary statically linked for x86_64" && \
+    echo "========================================"
