@@ -191,7 +191,9 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
                 if task.state == State::Waiting {
                     info!("Running task '{}'!", task.name);
                     task.state = State::Running;
-                    task.run_started = Some(UTC::now());
+                    let start_time = UTC::now();
+                    task.run_started = Some(start_time);
+                    eprintln!("Task '{}' was started at {}", task.name, start_time);
                     {
                         let tx = tx.clone();
                         let args = format_args(&task.task_spec.command, &task.task_spec.arguments);
@@ -295,6 +297,9 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
                     .contains(&task_result.return_code) {
                     // if the return code is in the continue list, return success
                     tasklist.tasks[task_grp_idx][idx].state = State::Success;
+                    eprintln!("Task '{}': succeeded after {:.1}s",
+                             tasklist.tasks[task_grp_idx][idx].name,
+                             task_result.duration.as_secs_f64());
                 } else {
                     // if the return code is not in either list, prune the sub-tree (set to skipped) and return error
                     let expected_codes = tasklist.tasks[task_grp_idx][idx]
@@ -310,6 +315,10 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
                                            return codes to continue [{}])",
                                           task_result.return_code,
                                           expected_codes);
+                    eprintln!("Task '{}': failed after {:.1}s. Reason: {}",
+                             tasklist.tasks[task_grp_idx][idx].name,
+                             task_result.duration.as_secs_f64(),
+                             err_msg);
                     tasklist.tasks[task_grp_idx][idx].state = State::Failed(err_msg);
                     let skip_list =
                         tasklist.get_descendants(&tasklist.tasks[task_grp_idx][idx].name);

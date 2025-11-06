@@ -1,0 +1,63 @@
+{
+    "schema": "iglu:com.snowplowanalytics.factotum/factfile/jsonschema/1-0-0",
+    "data": {
+        "name": "Concurrent tasks with failures",
+        "tasks": [
+            {
+                "name": "init",
+                "executor": "shell",
+                "command": "echo",
+                "arguments": [ "Initializing..." ],
+                "dependsOn": [],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "success-task",
+                "executor": "shell",
+                "command": "echo 'Processing...'; sleep 2; echo 'Success!'",
+                "arguments": [],
+                "dependsOn": [ "init" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "failing-task",
+                "executor": "shell",
+                "command": "echo 'Starting work...'; sleep 1; echo 'Error encountered!' >&2; exit 1",
+                "arguments": [],
+                "dependsOn": [ "init" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "slow-success-task",
+                "executor": "shell",
+                "command": "for i in {1..3}; do echo \"Slow task progress: $i/3\"; sleep 1; done; echo 'Done!'",
+                "arguments": [],
+                "dependsOn": [ "init" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "should-be-skipped",
+                "executor": "shell",
+                "command": "echo",
+                "arguments": [ "This should not run due to failing-task" ],
+                "dependsOn": [ "failing-task", "success-task" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            }
+        ]
+    }
+}

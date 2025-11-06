@@ -1,0 +1,107 @@
+{
+    "schema": "iglu:com.snowplowanalytics.factotum/factfile/jsonschema/1-0-0",
+    "data": {
+        "name": "Complex diamond DAG with streaming",
+        "tasks": [
+            {
+                "name": "fetch-data",
+                "executor": "shell",
+                "command": "echo 'Fetching data...'; sleep 1; echo 'Data fetched successfully'",
+                "arguments": [],
+                "dependsOn": [],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "process-part-a",
+                "executor": "shell",
+                "command": "for i in {1..4}; do echo \"Processing A: step $i\"; sleep 0.5; done",
+                "arguments": [],
+                "dependsOn": [ "fetch-data" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "process-part-b",
+                "executor": "shell",
+                "command": "for i in {1..3}; do echo \"Processing B: step $i\"; sleep 0.7; done",
+                "arguments": [],
+                "dependsOn": [ "fetch-data" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "process-part-c",
+                "executor": "shell",
+                "command": "for i in {1..5}; do echo \"Processing C: step $i\"; sleep 0.4; done",
+                "arguments": [],
+                "dependsOn": [ "fetch-data" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "validate-a",
+                "executor": "shell",
+                "command": "echo 'Validating A...'; sleep 1; echo 'A validated'",
+                "arguments": [],
+                "dependsOn": [ "process-part-a" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "validate-b",
+                "executor": "shell",
+                "command": "echo 'Validating B...'; sleep 1; echo 'B validated'",
+                "arguments": [],
+                "dependsOn": [ "process-part-b" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "validate-c",
+                "executor": "shell",
+                "command": "echo 'Validating C...'; sleep 1; echo 'C validated'",
+                "arguments": [],
+                "dependsOn": [ "process-part-c" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "merge-results",
+                "executor": "shell",
+                "command": "echo 'Merging all results...'; sleep 2; echo 'Results merged successfully'",
+                "arguments": [],
+                "dependsOn": [ "validate-a", "validate-b", "validate-c" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "generate-report",
+                "executor": "shell",
+                "command": "for i in {1..3}; do echo \"Report generation: $i/3\"; sleep 0.5; done; echo 'Report complete!'",
+                "arguments": [],
+                "dependsOn": [ "merge-results" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            }
+        ]
+    }
+}
