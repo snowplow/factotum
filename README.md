@@ -2,7 +2,7 @@
 
 [![Release][release-image]][releases] [![Apache License 2.0][license-image]][license]
 
-A dag running tool designed for efficiently running complex jobs with non-trivial dependency trees. 
+A dag running tool designed for efficiently running complex jobs with non-trivial dependency trees.
 
 ## The zen of Factotum
 
@@ -12,11 +12,11 @@ A dag running tool designed for efficiently running complex jobs with non-trivia
 
 ## User quickstart
 
-Assuming you're running **64 bit Linux**: 
+Assuming you're running **64 bit Linux**:
 
 ```{bash}
-wget https://github.com/snowplow/factotum/releases/download/0.6.0/factotum_0.6.0_linux_x86_64.zip
-unzip factotum_0.6.0_linux_x86_64.zip
+wget https://github.com/snowplow/factotum/releases/download/0.7.0/factotum_0.7.0_linux_x86_64.zip
+unzip factotum_0.7.0_linux_x86_64.zip
 ./factotum --version
 ```
 
@@ -49,12 +49,12 @@ To get a quick overview of the options provided, you can use the `--help` or `-h
 ```{bash}
 ./factotum --help
 ```
- 
+
 For more information on this file format and how to write your own jobs, see the **[Factfile format](/README.md#factfile-format)** section below.
 
 ## Factfile format
 
-Factfiles are self-describing JSON which declare a series of tasks and their dependencies. For example: 
+Factfiles are self-describing JSON which declare a series of tasks and their dependencies. For example:
 
 ```{json}
 {
@@ -101,11 +101,11 @@ Factfiles are self-describing JSON which declare a series of tasks and their dep
 ```
 
 This example defines three tasks that run shell commands - `echo alpha`, `echo beta` and `echo omega`. `echo alpha` has no dependencies - it will run immediately. `echo beta` depends
-on the completion of the `echo alpha` task, and so will wait for `echo alpha` to complete. `echo omega` depends on the `echo beta` task, and so will wait for `echo beta` to be complete before 
-executing. 
+on the completion of the `echo alpha` task, and so will wait for `echo alpha` to complete. `echo omega` depends on the `echo beta` task, and so will wait for `echo beta` to be complete before
+executing.
 
 Given the above, the tasks will be executed in the following sequence: `echo alpha`, `echo beta` and finally, `echo omega`. Tasks can have multiple dependencies in factotum, and tasks that are parallelizable will
-be run concurrently. Check out **[the samples](/samples)** for more sample factfiles or **[the wiki](https://github.com/snowplow/factotum/wiki#creating-a-job)** for a more complete description of the factfile format. 
+be run concurrently. Check out **[the samples](/samples)** for more sample factfiles or **[the wiki](https://github.com/snowplow/factotum/wiki#creating-a-job)** for a more complete description of the factfile format.
 
 ## Developer quickstart
 
@@ -118,15 +118,15 @@ Factotum is written in **[Rust](https://www.rust-lang.org/)**.
 * Set up a Vagrant box and ssh into it - `vagrant up && vagrant ssh`
    * This will take a few minutes
 * `cd /vagrant`
-* Compile and run a demo - `cargo run -- run samples/echo.factfile` 
+* Compile and run a demo - `cargo run -- run samples/echo.factfile`
 
-### Using stable Rust without Vagrant 
+### Using stable Rust without Vagrant
 
 * **[Install Rust](https://www.rust-lang.org/downloads.html)**
    * on Linux/Mac - `curl -sSf https://static.rust-lang.org/rustup.sh | sh`
 * Clone this repository - `git clone git@github.com:snowplow/factotum.git`
 * `cd factotum`
-* Compile and run a demo - `cargo run -- run samples/echo.factfile` 
+* Compile and run a demo - `cargo run -- run samples/echo.factfile`
 
 ## Copyright and license
 
@@ -144,5 +144,5 @@ limitations under the License.
 [license-image]: http://img.shields.io/badge/license-Apache--2-blue.svg?style=flat
 [license]: http://www.apache.org/licenses/LICENSE-2.0
 
-[release-image]: http://img.shields.io/badge/release-0.6.1-blue.svg?style=flat
+[release-image]: http://img.shields.io/badge/release-0.7.0-blue.svg?style=flat
 [releases]: https://github.com/snowplow/factotum/releases
