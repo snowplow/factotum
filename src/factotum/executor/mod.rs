@@ -181,6 +181,12 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
     }
 
     for task_grp_idx in 0..tasklist.tasks.len() {
+        // Check if shutdown has been requested before starting new task group
+        if crate::factotum::shutdown::is_shutting_down() {
+            eprintln!("Shutdown requested, skipping remaining task groups");
+            break;
+        }
+
         // everything in a task "group" gets run together
         let (tx, rx) = mpsc::channel::<(usize, RunResult)>();
 

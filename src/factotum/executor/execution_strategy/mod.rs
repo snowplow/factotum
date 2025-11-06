@@ -74,6 +74,10 @@ pub fn execute_os(name: &str, command: &mut Command) -> RunResult {
 
     match command.spawn() {
         Ok(mut child) => {
+            // Register child process for tracking during shutdown
+            let child_pid = child.id();
+            crate::factotum::shutdown::register_child_process(child_pid);
+
             let stdout = child.stdout.take().expect("Failed to capture stdout");
             let stderr = child.stderr.take().expect("Failed to capture stderr");
 
@@ -104,8 +108,24 @@ pub fn execute_os(name: &str, command: &mut Command) -> RunResult {
                 lines.join("\n")
             });
 
+            // Check if shutdown was requested before waiting
+            if crate::factotum::shutdown::is_shutting_down() {
+                // Unregister the process since we're handling shutdown
+                crate::factotum::shutdown::unregister_child_process(child_pid);
+                return RunResult {
+                    duration: run_start.elapsed(),
+                    task_execution_error: Some("Task cancelled due to shutdown".to_string()),
+                    stdout: None,
+                    stderr: None,
+                    return_code: -1,
+                };
+            }
+
             match child.wait() {
                 Ok(status) => {
+                    // Unregister child process after it completes
+                    crate::factotum::shutdown::unregister_child_process(child_pid);
+
                     let run_duration = run_start.elapsed();
                     let return_code = status.code().unwrap_or(1);
 
