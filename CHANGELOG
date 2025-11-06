@@ -1,3 +1,9 @@
+Version 0.7.0 (2025-11-06)
+--------------------------
+Update output logging to stream in realtime (#138)
+Respect SIGTERM & SIGINT so that application can exit cleanly (#127)
+Add job heartbeat as webhook event (#99)
+
 Version 0.6.1 (2025-06-02)
 --------------------------
 Update build process to release for arm64 (#134)
@@ -43,13 +49,13 @@ Add validate command (#68)
 Add graphviz dotfile output (#62)
 Move no color setting to CLI option (#53)
 Move run behavior into a run sub-command (#70)
-Set Factotum to go as far through the DAG as possible (#61) 
+Set Factotum to go as far through the DAG as possible (#61)
 Add webhook support (#59)
 Add support for attaching tags at runtime over the CLI (#77)
 Fix broken links in README (#78)
 Lint with rustfmt (#73)
 Publish binaries for macOS (#69)
-Standardize .factfile as the file extension for Factotum (#34) 
+Standardize .factfile as the file extension for Factotum (#34)
 
 Version 0.2.0 (2016-06-13)
 --------------------------
