@@ -1,0 +1,63 @@
+{
+    "schema": "iglu:com.snowplowanalytics.factotum/factfile/jsonschema/1-0-0",
+    "data": {
+        "name": "Concurrent tasks with streaming output",
+        "tasks": [
+            {
+                "name": "start",
+                "executor": "shell",
+                "command": "echo",
+                "arguments": [ "Starting concurrent tasks..." ],
+                "dependsOn": [],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "stream-branch-1",
+                "executor": "shell",
+                "command": "for i in {1..5}; do echo \"Branch 1: Line $i\"; sleep 1; done",
+                "arguments": [],
+                "dependsOn": [ "start" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "stream-branch-2",
+                "executor": "shell",
+                "command": "for i in {1..5}; do echo \"Branch 2: Line $i\"; sleep 1; done",
+                "arguments": [],
+                "dependsOn": [ "start" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "stream-branch-3",
+                "executor": "shell",
+                "command": "for i in {1..5}; do echo \"Branch 3: Line $i\"; sleep 1; done",
+                "arguments": [],
+                "dependsOn": [ "start" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "merge",
+                "executor": "shell",
+                "command": "echo",
+                "arguments": [ "All branches completed!" ],
+                "dependsOn": [ "stream-branch-1", "stream-branch-2", "stream-branch-3" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            }
+        ]
+    }
+}

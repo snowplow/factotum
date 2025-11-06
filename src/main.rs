@@ -245,34 +245,21 @@ fn get_task_result_line_str(task_result: &Task<&FactfileTask>) -> (String, Optio
     return (result, stderr);
 }
 
-fn get_task_results_str(task_results: &Vec<&Task<&FactfileTask>>) -> (String, String) {
-    let mut stderr = String::new();
-    let mut stdout = String::new();
-
+fn get_task_summary_str(task_results: &Vec<&Task<&FactfileTask>>) -> String {
     let mut total_run_time = Duration::new(0, 0);
     let mut executed = 0;
 
     for task in task_results.iter() {
-        let (task_stdout, task_stderr) = get_task_result_line_str(task);
-        stdout.push_str(&task_stdout);
-
-        if let Some(task_stderr_str) = task_stderr {
-            stderr.push_str(&task_stderr_str);
-        }
-
         if let Some(ref run_result) = task.run_result {
             total_run_time = total_run_time + run_result.duration;
             executed += 1;
         }
     }
 
-    let summary = format!("{}/{} tasks run in {}\n",
-                          executed,
-                          task_results.len(),
-                          get_duration_as_string(&total_run_time));
-    stdout.push_str(&summary.green().to_string());
-
-    (stdout, stderr)
+    format!("{}/{} tasks run in {}\n",
+            executed,
+            task_results.len(),
+            get_duration_as_string(&total_run_time)).green().to_string()
 }
 
 fn validate_start_task(job: &Factfile, start_task: &str) -> Result<(), &'static str> {
@@ -422,18 +409,12 @@ fn parse_file_and_execute_with_strategy<F>(factfile: &str,
             let normal_completion = !has_errors && !has_early_finish;
 
             let result = if normal_completion {
-                let (stdout_summary, stderr_summary) = get_task_results_str(&tasks);
-                print!("{}", stdout_summary);
-                if !stderr_summary.trim_right().is_empty() {
-                    print_err!("{}", stderr_summary.trim_right());
-                }
+                let summary = get_task_summary_str(&tasks);
+                print!("{}", summary);
                 PROC_SUCCESS
             } else if has_early_finish && !has_errors {
-                let (stdout_summary, stderr_summary) = get_task_results_str(&tasks);
-                print!("{}", stdout_summary);
-                if !stderr_summary.trim_right().is_empty() {
-                    print_err!("{}", stderr_summary.trim_right());
-                }
+                let summary = get_task_summary_str(&tasks);
+                print!("{}", summary);
                 let incomplete_tasks = tasks.iter()
                     .filter(|r| !r.run_result.is_some())
                     .map(|r| format!("'{}'", r.name.cyan()))
@@ -453,12 +434,8 @@ fn parse_file_and_execute_with_strategy<F>(factfile: &str,
                          incomplete_tasks);
                 PROC_SUCCESS
             } else {
-                let (stdout_summary, stderr_summary) = get_task_results_str(&tasks);
-                print!("{}", stdout_summary);
-
-                if !stderr_summary.trim_right().is_empty() {
-                    print_err!("{}", stderr_summary.trim_right());
-                }
+                let summary = get_task_summary_str(&tasks);
+                print!("{}", summary);
 
                 let incomplete_tasks = tasks.iter()
                     .filter(|r| !r.run_result.is_some())
@@ -1186,102 +1163,6 @@ fn test_get_task_result_line_str() {
                        "fails".cyan(),
                        "There's errors".red()),
                stderr_failed.unwrap());
-
-}
-
-#[test]
-fn test_get_task_results_str_summary() {
-    use chrono::UTC;
-    use factotum::executor::execution_strategy::RunResult;
-    use factotum::factfile::{Task as FactfileTask, OnResult};
-
-    let dt = UTC::now();
-
-    let task_one_spec = FactfileTask {
-        name: "hello world".to_string(),
-        depends_on: vec![],
-        executor: "".to_string(),
-        command: "".to_string(),
-        arguments: vec![],
-        on_result: OnResult {
-            terminate_job: vec![],
-            continue_job: vec![],
-        },
-    };
-
-    let task_one = Task::<&FactfileTask> {
-        name: String::from("hello world"),
-        // children: vec![],
-        state: State::Success,
-        task_spec: &task_one_spec,
-        run_started: Some(dt),
-        run_result: Some(RunResult {
-            duration: Duration::from_secs(20),
-            task_execution_error: None,
-            stdout: Some(String::from("hello world")),
-            stderr: Some(String::from("Mistake")),
-            return_code: 0,
-        }),
-    };
-
-
-    let task_two_spec = FactfileTask {
-        name: "hello world 2".to_string(),
-        depends_on: vec![],
-        executor: "".to_string(),
-        command: "".to_string(),
-        arguments: vec![],
-        on_result: OnResult {
-            terminate_job: vec![],
-            continue_job: vec![],
-        },
-    };
-
-    let task_two = Task::<&FactfileTask> {
-        name: String::from("hello world 2"),
-        // children: vec![],
-        state: State::Success,
-        task_spec: &task_two_spec,
-        run_started: Some(dt),
-        run_result: Some(RunResult {
-            duration: Duration::from_secs(80),
-            task_execution_error: None,
-            stdout: Some(String::from("hello world")),
-            stderr: Some(String::from("Mistake")),
-            return_code: 0,
-        }),
-    };
-
-    let mut tasks: Vec<&Task<&FactfileTask>> = vec![];
-    let (stdout, stderr) = get_task_results_str(&tasks);
-    let expected: String = format!("{}", "0/0 tasks run in 0.0s\n".green());
-
-    assert_eq!(stdout, expected);
-    assert_eq!(stderr, "");
-
-    tasks.push(&task_one);
-
-    let (one_task_stdout, one_task_stderr) = get_task_results_str(&tasks);
-    let (first_task_stdout, first_task_stderr) = get_task_result_line_str(&tasks[0]);
-    let expected_one_task = format!("{}{}",
-                                    first_task_stdout,
-                                    "1/1 tasks run in 20.0s\n".green());
-
-    assert_eq!(one_task_stdout, expected_one_task);
-    let first_task_stderr_str = first_task_stderr.unwrap();
-    assert_eq!(one_task_stderr, first_task_stderr_str);
-
-    tasks.push(&task_two);
-
-    let (two_task_stdout, two_task_stderr) = get_task_results_str(&tasks);
-    let (task_two_stdout, task_two_stderr) = get_task_result_line_str(&tasks[1]);
-    let expected_two_task = format!("{}{}{}",
-                                    first_task_stdout,
-                                    task_two_stdout,
-                                    "2/2 tasks run in 1m, 40s\n".green());
-    assert_eq!(two_task_stdout, expected_two_task);
-    assert_eq!(two_task_stderr,
-               format!("{}{}", first_task_stderr_str, task_two_stderr.unwrap()));
 
 }
 
