@@ -29,6 +29,9 @@ extern crate hyper_native_tls;
 extern crate libc;
 extern crate ifaces;
 extern crate dns_lookup;
+extern crate signal_hook;
+#[macro_use]
+extern crate lazy_static;
 
 use docopt::Docopt;
 use std::fs;
@@ -630,6 +633,31 @@ fn init_logger() -> Result<(), String> {
     log4rs::init_config(log_config).map_err(|e| format!("couldn't initialize log configuration. Reason: {}", e.description()))
 }
 
+fn install_signal_handlers() -> Result<(), String> {
+    use signal_hook::consts::signal::{SIGTERM, SIGINT};
+    use signal_hook::iterator::Signals;
+    use std::thread;
+
+    let mut signals = Signals::new(&[SIGTERM, SIGINT])
+        .map_err(|e| format!("Failed to register signal handlers: {}", e))?;
+
+    thread::spawn(move || {
+        for sig in signals.forever() {
+            match sig {
+                SIGTERM | SIGINT => {
+                    println!("\nReceived shutdown signal, terminating gracefully...");
+                    factotum::shutdown::request_shutdown();
+                    factotum::shutdown::terminate_all_children();
+                    break;
+                }
+                _ => unreachable!(),
+            }
+        }
+    });
+
+    Ok(())
+}
+
 fn main() {
     std::process::exit(factotum())
 }
@@ -637,6 +665,12 @@ fn main() {
 fn factotum() -> i32 {
     if let Err(log) = init_logger() {
         println!("Log initialization error: {}", log);
+        return PROC_OTHER_ERROR;
+    }
+
+    // Install signal handlers for graceful shutdown
+    if let Err(e) = install_signal_handlers() {
+        println!("Failed to install signal handlers: {}", e);
         return PROC_OTHER_ERROR;
     }
 

@@ -74,6 +74,10 @@ pub fn execute_os(name: &str, command: &mut Command) -> RunResult {
 
     match command.spawn() {
         Ok(mut child) => {
+            // Register child process for tracking during shutdown
+            let child_pid = child.id();
+            crate::factotum::shutdown::register_child_process(child_pid);
+
             let stdout = child.stdout.take().expect("Failed to capture stdout");
             let stderr = child.stderr.take().expect("Failed to capture stderr");
 
@@ -104,25 +108,52 @@ pub fn execute_os(name: &str, command: &mut Command) -> RunResult {
                 lines.join("\n")
             });
 
+            // Check if shutdown was requested before waiting
+            if crate::factotum::shutdown::is_shutting_down() {
+                // Kill the child process
+                let _ = child.kill();
+
+                // Wait for it to exit (reap zombie)
+                let _ = child.wait();
+
+                // Unregister since we're handling shutdown
+                crate::factotum::shutdown::unregister_child_process(child_pid);
+
+                // Join the streaming threads to capture any final output
+                let task_stdout = stdout_handle.join().unwrap_or_else(|_| {
+                    warn!("stdout reader thread panicked for task '{}'", name);
+                    String::new()
+                });
+                let task_stderr = stderr_handle.join().unwrap_or_else(|_| {
+                    warn!("stderr reader thread panicked for task '{}'", name);
+                    String::new()
+                });
+
+                return RunResult {
+                    duration: run_start.elapsed(),
+                    task_execution_error: Some("Task cancelled due to shutdown".to_string()),
+                    stdout: if task_stdout.is_empty() { None } else { Some(task_stdout) },
+                    stderr: if task_stderr.is_empty() { None } else { Some(task_stderr) },
+                    return_code: -1,
+                };
+            }
+
             match child.wait() {
                 Ok(status) => {
+                    // Unregister child process after it completes
+                    crate::factotum::shutdown::unregister_child_process(child_pid);
+
                     let run_duration = run_start.elapsed();
                     let return_code = status.code().unwrap_or(1);
 
-                    let task_stdout = match stdout_handle.join() {
-                        Ok(output) => output,
-                        Err(_) => {
-                            warn!("stdout reader thread panicked for task '{}'", name);
-                            String::new()
-                        }
-                    };
-                    let task_stderr = match stderr_handle.join() {
-                        Ok(output) => output,
-                        Err(_) => {
-                            warn!("stderr reader thread panicked for task '{}'", name);
-                            String::new()
-                        }
-                    };
+                    let task_stdout = stdout_handle.join().unwrap_or_else(|_| {
+                        warn!("stdout reader thread panicked for task '{}'", name);
+                        String::new()
+                    });
+                    let task_stderr = stderr_handle.join().unwrap_or_else(|_| {
+                        warn!("stderr reader thread panicked for task '{}'", name);
+                        String::new()
+                    });
 
                     info!("task '{}' completed with return code {}", name, return_code);
 

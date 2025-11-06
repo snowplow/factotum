@@ -1,0 +1,33 @@
+{
+    "schema": "iglu:com.snowplowanalytics.factotum/factfile/jsonschema/1-0-0",
+    "data": {
+        "name": "SIGTERM Resistant Task Example",
+        "tasks": [
+            {
+                "name": "IgnoresSIGTERM",
+                "executor": "shell",
+                "command": "sh",
+                "arguments": [
+                    "-c",
+                    "trap '' TERM; echo 'Task started, will ignore SIGTERM...'; sleep 30; echo 'Task completed normally'"
+                ],
+                "dependsOn": [],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "ShouldNotRun",
+                "executor": "shell",
+                "command": "echo",
+                "arguments": [ "This task should never run if shutdown happens" ],
+                "dependsOn": [ "IgnoresSIGTERM" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            }
+        ]
+    }
+}

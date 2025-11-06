@@ -17,6 +17,7 @@ pub mod parser;
 pub mod executor;
 pub mod sequencer;
 pub mod webhook;
+pub mod shutdown;
 
 #[cfg(test)]
 mod tests;
