@@ -14,8 +14,11 @@
 
 #[cfg(test)]
 mod tests;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Instant, Duration};
+use std::io::{BufRead, BufReader};
+use std::thread;
+use colored::*;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct RunResult {
@@ -65,34 +68,92 @@ pub fn execute_simulation(name: &str, command: &mut Command) -> RunResult {
 pub fn execute_os(name: &str, command: &mut Command) -> RunResult {
     let run_start = Instant::now();
     info!("Executing sh {:?}", command);
-    match command.output() {
-        Ok(r) => {
-            let run_duration = run_start.elapsed();
-            let return_code = r.status.code().unwrap_or(1); // 1 will be returned if the process was killed by a signal
 
-            let task_stdout: String = String::from_utf8_lossy(&r.stdout).trim_right().into();
-            let task_stderr: String = String::from_utf8_lossy(&r.stderr).trim_right().into();
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
 
-            info!("task '{}' stdout:\n'{}'", name, task_stdout);
-            info!("task '{}' stderr:\n'{}'", name, task_stderr);
+    match command.spawn() {
+        Ok(mut child) => {
+            let stdout = child.stdout.take().expect("Failed to capture stdout");
+            let stderr = child.stderr.take().expect("Failed to capture stderr");
 
-            let task_stdout_opt = if task_stdout.is_empty() {
-                None
-            } else {
-                Some(task_stdout)
-            };
-            let task_stderr_opt = if task_stderr.is_empty() {
-                None
-            } else {
-                Some(task_stderr)
-            };
+            let name_stdout = name.to_string();
+            let name_stderr = name.to_string();
 
-            RunResult {
-                duration: run_duration,
-                task_execution_error: None,
-                stdout: task_stdout_opt,
-                stderr: task_stderr_opt,
-                return_code: return_code,
+            let stdout_handle = thread::spawn(move || {
+                let reader = BufReader::new(stdout);
+                let mut lines = Vec::new();
+                for line in reader.lines() {
+                    if let Ok(line) = line {
+                        println!("[{}] {}", name_stdout.cyan(), line);
+                        lines.push(line);
+                    }
+                }
+                lines.join("\n")
+            });
+
+            let stderr_handle = thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                let mut lines = Vec::new();
+                for line in reader.lines() {
+                    if let Ok(line) = line {
+                        eprintln!("[{}] {}", name_stderr.cyan(), line.red());
+                        lines.push(line);
+                    }
+                }
+                lines.join("\n")
+            });
+
+            match child.wait() {
+                Ok(status) => {
+                    let run_duration = run_start.elapsed();
+                    let return_code = status.code().unwrap_or(1);
+
+                    let task_stdout = match stdout_handle.join() {
+                        Ok(output) => output,
+                        Err(_) => {
+                            warn!("stdout reader thread panicked for task '{}'", name);
+                            String::new()
+                        }
+                    };
+                    let task_stderr = match stderr_handle.join() {
+                        Ok(output) => output,
+                        Err(_) => {
+                            warn!("stderr reader thread panicked for task '{}'", name);
+                            String::new()
+                        }
+                    };
+
+                    info!("task '{}' completed with return code {}", name, return_code);
+
+                    let task_stdout_opt = if task_stdout.is_empty() {
+                        None
+                    } else {
+                        Some(task_stdout)
+                    };
+                    let task_stderr_opt = if task_stderr.is_empty() {
+                        None
+                    } else {
+                        Some(task_stderr)
+                    };
+
+                    RunResult {
+                        duration: run_duration,
+                        task_execution_error: None,
+                        stdout: task_stdout_opt,
+                        stderr: task_stderr_opt,
+                        return_code: return_code,
+                    }
+                }
+                Err(e) => {
+                    RunResult {
+                        duration: run_start.elapsed(),
+                        task_execution_error: Some(format!("Error waiting for process - {}", e)),
+                        stdout: None,
+                        stderr: None,
+                        return_code: -1,
+                    }
+                }
             }
         }
         Err(message) => {

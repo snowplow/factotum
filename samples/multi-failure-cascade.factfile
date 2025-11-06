@@ -1,0 +1,85 @@
+{
+    "schema": "iglu:com.snowplowanalytics.factotum/factfile/jsonschema/1-0-0",
+    "data": {
+        "name": "Multiple failures with cascade effect",
+        "tasks": [
+            {
+                "name": "setup",
+                "executor": "shell",
+                "command": "echo 'Setting up environment...'; sleep 1; echo 'Setup complete'",
+                "arguments": [],
+                "dependsOn": [],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "quick-fail",
+                "executor": "shell",
+                "command": "echo 'Quick task starting'; echo 'FAILURE!' >&2; exit 5",
+                "arguments": [],
+                "dependsOn": [ "setup" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "slow-success",
+                "executor": "shell",
+                "command": "for i in {1..6}; do echo \"Long task: step $i\"; sleep 1; done",
+                "arguments": [],
+                "dependsOn": [ "setup" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "delayed-fail",
+                "executor": "shell",
+                "command": "for i in {1..3}; do echo \"Working on item $i\"; sleep 1; done; echo 'Critical error!' >&2; exit 2",
+                "arguments": [],
+                "dependsOn": [ "setup" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "depends-on-quick-fail",
+                "executor": "shell",
+                "command": "echo",
+                "arguments": [ "Should be skipped" ],
+                "dependsOn": [ "quick-fail" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "depends-on-delayed-fail",
+                "executor": "shell",
+                "command": "echo",
+                "arguments": [ "Should also be skipped" ],
+                "dependsOn": [ "delayed-fail" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            },
+            {
+                "name": "final-task",
+                "executor": "shell",
+                "command": "echo",
+                "arguments": [ "Will never run due to failures" ],
+                "dependsOn": [ "depends-on-quick-fail", "depends-on-delayed-fail", "slow-success" ],
+                "onResult": {
+                    "terminateJobWithSuccess": [],
+                    "continueJob": [ 0 ]
+                }
+            }
+        ]
+    }
+}
