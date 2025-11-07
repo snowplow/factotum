@@ -18,6 +18,7 @@ use std::process::{Command, Stdio};
 use std::time::{Instant, Duration};
 use std::io::{BufRead, BufReader};
 use std::thread;
+use std::sync::{Arc, Mutex};
 use colored::*;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -41,7 +42,7 @@ pub fn simulation_text(name: &str, command: &Command) -> String {
     let command_col_width = cmp::max(command_text.len() + col_padding,
                                      col_command_title.len() + col_padding);
 
-    let lines = vec![ 
+    let lines = vec![
                       format!("/{fill:->taskwidth$}|{fill:->cmdwidth$}\\", fill="-", taskwidth=task_col_width, cmdwidth=command_col_width),
                       format!("| {:taskwidth$} | {:cmdwidth$} |", "TASK", "COMMAND", taskwidth=task_col_width-col_padding, cmdwidth=command_col_width-col_padding),
                       format!("|{fill:-<taskwidth$}|{fill:-<cmdwidth$}|", fill="-", taskwidth=task_col_width, cmdwidth=command_col_width),
@@ -66,6 +67,10 @@ pub fn execute_simulation(name: &str, command: &mut Command) -> RunResult {
 }
 
 pub fn execute_os(name: &str, command: &mut Command) -> RunResult {
+    execute_os_with_buffers(name, command, None, None)
+}
+
+pub fn execute_os_with_buffers(name: &str, command: &mut Command, stdout_buffer: Option<Arc<Mutex<String>>>, stderr_buffer: Option<Arc<Mutex<String>>>) -> RunResult {
     let run_start = Instant::now();
     info!("Executing sh {:?}", command);
 
@@ -84,24 +89,44 @@ pub fn execute_os(name: &str, command: &mut Command) -> RunResult {
             let name_stdout = name.to_string();
             let name_stderr = name.to_string();
 
+            let stdout_buffer_clone = stdout_buffer.clone();
             let stdout_handle = thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 let mut lines = Vec::new();
                 for line in reader.lines() {
                     if let Ok(line) = line {
                         println!("[{}] {}", name_stdout.cyan(), line);
+
+                        // Also append to shared buffer if provided
+                        if let Some(ref buffer) = stdout_buffer_clone {
+                            let mut buf = buffer.lock().unwrap_or_else(|p| p.into_inner());
+                            if !buf.is_empty() {
+                                buf.push('\n');
+                            }
+                            buf.push_str(&line);
+                        }
                         lines.push(line);
                     }
                 }
                 lines.join("\n")
             });
 
+            let stderr_buffer_clone = stderr_buffer.clone();
             let stderr_handle = thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 let mut lines = Vec::new();
                 for line in reader.lines() {
                     if let Ok(line) = line {
                         eprintln!("[{}] {}", name_stderr.cyan(), line.red());
+
+                        // Also append to shared buffer if provided
+                        if let Some(ref buffer) = stderr_buffer_clone {
+                            let mut buf = buffer.lock().unwrap_or_else(|p| p.into_inner());
+                            if !buf.is_empty() {
+                                buf.push('\n');
+                            }
+                            buf.push_str(&line);
+                        }
                         lines.push(line);
                     }
                 }

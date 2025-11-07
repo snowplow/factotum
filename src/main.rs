@@ -75,7 +75,7 @@ const USAGE: &'static str =
 Factotum.
 
 Usage:
-  factotum run <factfile> [--start=<start_task>] [--env=<env>] [--dry-run] [--no-colour] [--webhook=<url>] [--tag=<tag>]... [--constraint=<constraint>]... [--max-stdouterr-size=<bytes>]
+  factotum run <factfile> [--start=<start_task>] [--env=<env>] [--dry-run] [--no-colour] [--webhook=<url>] [--tag=<tag>]... [--constraint=<constraint>]... [--max-stdouterr-size=<bytes>] [--heartbeat-interval=<seconds>]
   factotum validate <factfile> [--no-colour]
   factotum dot <factfile> [--start=<start_task>] [--output=<output_file>] [--overwrite] [--no-colour]
   factotum (-h | --help) [--no-colour]
@@ -94,6 +94,7 @@ Options:
   --tag=<tag>                           Add job metadata (tags).
   --constraint=<constraint>             Checks for an external constraint that will prevent execution; allowed constraints (host).
   --max-stdouterr-size=<bytes>          The maximum size of the individual stdout/err sent via the webhook functions for job updates.
+  --heartbeat-interval=<seconds>        Send periodic task updates with cumulative logs every N seconds for running tasks.
 ";
 
 #[derive(Debug, RustcDecodable)]
@@ -108,6 +109,7 @@ struct Args {
     flag_tag: Option<Vec<String>>,
     flag_constraint: Option<Vec<String>>,
     flag_max_stdouterr_size: Option<usize>,
+    flag_heartbeat_interval: Option<u64>,
     arg_factfile: String,
     flag_version: bool,
     cmd_run: bool,
@@ -239,6 +241,7 @@ fn parse_file_and_simulate(factfile: &str, env: Option<Json>, start_from: Option
                                          }),
                                          None,
                                          None,
+                                         None,
                                          None)
 }
 
@@ -247,7 +250,8 @@ fn parse_file_and_execute(factfile: &str,
                           start_from: Option<String>,
                           webhook_url: Option<String>,
                           job_tags: Option<HashMap<String, String>>,
-                          max_stdouterr_size: Option<usize>)
+                          max_stdouterr_size: Option<usize>,
+                          heartbeat_interval: Option<u64>)
                           -> i32 {
     parse_file_and_execute_with_strategy(factfile,
                                          env,
@@ -256,7 +260,8 @@ fn parse_file_and_execute(factfile: &str,
                                          OverrideResultMappings::None,
                                          webhook_url,
                                          job_tags,
-                                         max_stdouterr_size)
+                                         max_stdouterr_size,
+                                         heartbeat_interval)
 }
 
 fn parse_file_and_execute_with_strategy<F>(factfile: &str,
@@ -266,7 +271,8 @@ fn parse_file_and_execute_with_strategy<F>(factfile: &str,
                                            override_result_map: OverrideResultMappings,
                                            webhook_url: Option<String>,
                                            job_tags: Option<HashMap<String, String>>,
-                                           max_stdouterr_size: Option<usize>)
+                                           max_stdouterr_size: Option<usize>,
+                                           heartbeat_interval: Option<u64>)
                                            -> i32
     where F: Fn(&str, &mut Command) -> RunResult + Send + Sync + 'static + Copy
 {
@@ -300,7 +306,8 @@ fn parse_file_and_execute_with_strategy<F>(factfile: &str,
             let job_res = factotum::executor::execute_factfile(&job,
                                                                start_from,
                                                                strategy,
-                                                               maybe_updates_channel);
+                                                               maybe_updates_channel,
+                                                               heartbeat_interval);
 
             let mut has_errors = false;
             let mut has_early_finish = false;
@@ -771,7 +778,8 @@ fn factotum() -> i32 {
                                    args.flag_start,
                                    args.flag_webhook,
                                    tag_map,
-                                   args.flag_max_stdouterr_size)
+                                   args.flag_max_stdouterr_size,
+                                   args.flag_heartbeat_interval)
         } else {
             parse_file_and_simulate(&args.arg_factfile, env_json, args.flag_start)
         }

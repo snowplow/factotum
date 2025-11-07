@@ -1,0 +1,33 @@
+{
+  "schema": "iglu:com.snowplowanalytics.factotum/factfile/jsonschema/1-0-0",
+  "data": {
+    "name": "heartbeat_test",
+    "tasks": [
+      {
+        "name": "quick_task",
+        "executor": "shell",
+        "command": "echo",
+        "arguments": ["Starting tests..."],
+        "dependsOn": [],
+        "onResult": {
+          "terminateJobWithSuccess": [],
+          "continueJob": [0]
+        }
+      },
+      {
+        "name": "long_task_with_logs",
+        "executor": "shell",
+        "command": "bash",
+        "arguments": [
+          "-c",
+          "for i in 1 2 3 4 5 6 7 8 9 10; do echo Progress: $i/10; sleep 3; done; echo Task completed"
+        ],
+        "dependsOn": ["quick_task"],
+        "onResult": {
+          "terminateJobWithSuccess": [],
+          "continueJob": [0]
+        }
+      }
+    ]
+  }
+}
