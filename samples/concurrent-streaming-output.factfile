@@ -28,7 +28,7 @@
             {
                 "name": "stream-branch-2",
                 "executor": "shell",
-                "command": "for i in {1..5}; do echo \"Branch 2: Line $i\"; sleep 1; done",
+                "command": "for i in {1..100}; do echo \"Branch 2: Line $i\"; sleep 1; done",
                 "arguments": [],
                 "dependsOn": [ "start" ],
                 "onResult": {
@@ -39,7 +39,7 @@
             {
                 "name": "stream-branch-3",
                 "executor": "shell",
-                "command": "for i in {1..5}; do echo \"Branch 3: Line $i\"; sleep 1; done",
+                "command": "for i in {1..20}; do echo \"Branch 3: Line $i\"; sleep 1; done",
                 "arguments": [],
                 "dependsOn": [ "start" ],
                 "onResult": {

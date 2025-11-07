@@ -143,7 +143,8 @@ fn execute_sends_started_msg() {
     execute_factfile(&ff,
                      None,
                      execution_strategy::execute_simulation,
-                     Some(tx.clone()));
+                     Some(tx.clone()),
+                     None);
 
     let expected_starting = rx.recv_timeout(Duration::from_millis(300)).unwrap();
 
@@ -194,7 +195,8 @@ fn execute_sends_running_messages() {
     execute_factfile(&ff,
                      None,
                      execution_strategy::execute_simulation,
-                     Some(tx.clone()));
+                     Some(tx.clone()),
+                     None);
 
     println!("Expecting {} messages..", total_expected_task_updates);
 
@@ -267,7 +269,8 @@ fn execute_sends_updates_for_skipped_fail() {
     execute_factfile(&ff,
                      None,
                      execution_strategy::execute_simulation,
-                     Some(tx.clone()));
+                     Some(tx.clone()),
+                     None);
 
     let mut recv_msg = vec![];
 
@@ -358,7 +361,8 @@ fn execute_sends_failed_skipped_messages() {
     execute_factfile(&ff,
                      None,
                      execution_strategy::execute_simulation,
-                     Some(tx.clone()));
+                     Some(tx.clone()),
+                     None);
 
     let mut recv_msg = vec![];
 
@@ -489,7 +493,8 @@ fn execute_sends_updates_for_skipped_noop() {
     execute_factfile(&ff,
                      None,
                      execution_strategy::execute_simulation,
-                     Some(tx.clone()));
+                     Some(tx.clone()),
+                     None);
 
     let mut recv_msg = vec![];
 
@@ -580,7 +585,8 @@ fn execute_sends_noop_skipped_messages() {
     execute_factfile(&ff,
                      None,
                      execution_strategy::execute_simulation,
-                     Some(tx.clone()));
+                     Some(tx.clone()),
+                     None);
 
     let mut recv_msg = vec![];
 
