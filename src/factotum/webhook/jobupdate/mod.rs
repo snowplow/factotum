@@ -21,7 +21,7 @@ static TASK_UPDATE_SCHEMA_NAME: &'static str = "iglu:com.snowplowanalytics.\
                                                factotum/task_update/jsonschema/1-0-0";
 
 use factotum::executor::{ExecutionState, ExecutionUpdate, TaskSnapshot,
-                         Transition as ExecutorTransition};
+                         Transition as ExecutorTransition, HeartbeatData};
 use super::jobcontext::JobContext;
 use chrono::{self, UTC};
 use std::collections::BTreeMap;
@@ -199,6 +199,7 @@ pub struct TaskTransition {
     taskName: String,
 }
 
+
 #[derive(RustcDecodable, Debug)]
 #[allow(non_snake_case)]
 pub struct JobUpdate {
@@ -229,7 +230,14 @@ impl JobUpdate {
                                        &execution_update.task_snapshot),
             startTime: to_string_datetime(&context.start_time),
             runDuration: (UTC::now() - context.start_time).to_string(),
-            taskStates: JobUpdate::to_task_states(&execution_update.task_snapshot, &max_stdouterr_size),
+            taskStates: {
+                // Get heartbeat data from either Heartbeat transitions OR live_task_logs field
+                let heartbeat_data = match execution_update.transition {
+                    ExecutorTransition::Heartbeat(ref hb) => Some(hb),
+                    _ => execution_update.live_task_logs.as_ref(),
+                };
+                JobUpdate::to_task_states(&execution_update.task_snapshot, &max_stdouterr_size, heartbeat_data)
+            },
             transition: {
                 match execution_update.transition {
                     ExecutorTransition::Job(ref j) => {
@@ -266,6 +274,19 @@ impl JobUpdate {
                             .collect();
                         Some(tasks)
                     }
+                    ExecutorTransition::Heartbeat(ref hb) => {
+                        // For heartbeats, create synthetic RUNNING->RUNNING transitions
+                        let tasks = hb.iter()
+                            .map(|t| {
+                                TaskTransition {
+                                    taskName: t.task_name.clone(),
+                                    previousState: TaskRunState::RUNNING,
+                                    currentState: TaskRunState::RUNNING,
+                                }
+                            })
+                            .collect();
+                        Some(tasks)
+                    }
                     _ => None,
                 }
             },
@@ -283,11 +304,24 @@ impl JobUpdate {
         json::encode(&wrapped).unwrap()
     }
 
-    fn to_task_states(tasks: &TaskSnapshot, max_stdouterr_size: &usize) -> Vec<TaskUpdate> {
+    fn to_task_states(tasks: &TaskSnapshot, max_stdouterr_size: &usize, heartbeat_logs: Option<&HeartbeatData>) -> Vec<TaskUpdate> {
         use chrono::duration::Duration as ChronoDuration;
+        use std::collections::HashMap;
+
+        // Build a lookup map for heartbeat logs
+        let heartbeat_map: HashMap<&str, (&str, &str)> = if let Some(hb_data) = heartbeat_logs {
+            hb_data.iter()
+                .map(|hb| (hb.task_name.as_str(), (hb.stdout.as_str(), hb.stderr.as_str())))
+                .collect()
+        } else {
+            HashMap::new()
+        };
 
         tasks.iter()
             .map(|task| {
+                // Check if this task has heartbeat logs
+                let hb_logs = heartbeat_map.get(task.name.as_str());
+
                 TaskUpdate {
                     taskName: task.name.clone(),
                     state: match task.state {
@@ -309,19 +343,35 @@ impl JobUpdate {
                         None
                     },
                     stdout: if let Some(ref r) = task.run_result {
+                        // Completed task - use run_result
                         if let Some(ref stdout) = r.stdout {
                             Some(tail_n_chars(stdout, *max_stdouterr_size).into())
                         } else {
                             None
                         }
+                    } else if let Some(&(stdout, _)) = hb_logs {
+                        // Running task with heartbeat logs
+                        if stdout.is_empty() {
+                            None
+                        } else {
+                            Some(tail_n_chars(stdout, *max_stdouterr_size).into())
+                        }
                     } else {
                         None
                     },
                     stderr: if let Some(ref r) = task.run_result {
+                        // Completed task - use run_result
                         if let Some(ref stderr) = r.stderr {
                             Some(tail_n_chars(stderr, *max_stdouterr_size).into())
                         } else {
                             None
+                        }
+                    } else if let Some(&(_, stderr)) = hb_logs {
+                        // Running task with heartbeat logs
+                        if stderr.is_empty() {
+                            None
+                        } else {
+                            Some(tail_n_chars(stderr, *max_stdouterr_size).into())
                         }
                     } else {
                         None
@@ -338,9 +388,9 @@ impl JobUpdate {
                                 Some(execution_error.clone())
                             } else {
                                 Some(reason.clone())
-                            }                            
+                            }
                         },
-                        _ => None   
+                        _ => None
                     },
                 }
             })

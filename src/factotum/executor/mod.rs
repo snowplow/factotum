@@ -14,6 +14,7 @@
 
 pub mod execution_strategy;
 pub mod task_list;
+pub mod heartbeat;
 #[cfg(test)]
 mod tests;
 
@@ -25,6 +26,10 @@ use factotum::factfile::Factfile;
 use std::process::Command;
 use std::thread;
 use std::sync::mpsc;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 pub fn get_task_execution_list(factfile: &Factfile,
                                start_from: Option<String>)
@@ -82,6 +87,16 @@ pub struct TaskTransition {
     pub to_state: TaskExecutionState,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct HeartbeatTaskData {
+    pub task_name: String,
+    pub elapsed_seconds: u64,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+pub type HeartbeatData = Vec<HeartbeatTaskData>;
+
 impl TaskTransition {
     pub fn new(task_name: &str, old_state: TaskExecutionState, state: TaskExecutionState) -> Self {
         TaskTransition {
@@ -112,6 +127,7 @@ impl JobTransition {
 pub enum Transition {
     Job(JobTransition),
     Task(TaskTransitions),
+    Heartbeat(HeartbeatData),
 }
 
 pub type TaskSnapshot = Vec<Task<FactfileTask>>;
@@ -128,6 +144,7 @@ pub struct ExecutionUpdate {
     pub execution_state: ExecutionState,
     pub task_snapshot: TaskSnapshot,
     pub transition: Transition,
+    pub live_task_logs: Option<HeartbeatData>,
 }
 
 impl ExecutionUpdate {
@@ -139,6 +156,20 @@ impl ExecutionUpdate {
             execution_state: execution_state,
             task_snapshot: task_snapshot,
             transition: transition,
+            live_task_logs: None,
+        }
+    }
+
+    pub fn new_with_logs(execution_state: ExecutionState,
+                         task_snapshot: TaskSnapshot,
+                         transition: Transition,
+                         live_task_logs: Option<HeartbeatData>)
+                         -> Self {
+        ExecutionUpdate {
+            execution_state: execution_state,
+            task_snapshot: task_snapshot,
+            transition: transition,
+            live_task_logs: live_task_logs,
         }
     }
 }
@@ -163,7 +194,8 @@ pub fn get_task_snapshot(tasklist: &TaskList<&FactfileTask>) -> TaskSnapshot {
 pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
                                start_from: Option<String>,
                                strategy: F,
-                               progress_channel: Option<mpsc::Sender<ExecutionUpdate>>)
+                               progress_channel: Option<mpsc::Sender<ExecutionUpdate>>,
+                               heartbeat_interval: Option<u64>)
                                -> TaskList<&'a FactfileTask>
     where F: Fn(&str, &mut Command) -> RunResult + Send + Sync + 'static + Copy
 {
@@ -179,6 +211,27 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
                                                                     ExecutionState::Started)));
         send.send(update).unwrap();
     }
+
+    // Create shared snapshot for heartbeat thread
+    let shared_snapshot = Arc::new(Mutex::new(get_task_snapshot(&tasklist)));
+
+    // Spawn heartbeat thread if interval is specified
+    let heartbeat_handle = if let Some(interval_secs) = heartbeat_interval {
+        if let Some(ref send) = progress_channel {
+            let shutdown_flag = Arc::new(AtomicBool::new(false));
+            let handle = heartbeat::spawn_heartbeat_thread(
+                Duration::from_secs(interval_secs),
+                send.clone(),
+                shutdown_flag.clone(),
+                shared_snapshot.clone(),
+            );
+            Some((handle, shutdown_flag))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     for task_grp_idx in 0..tasklist.tasks.len() {
         // Check if shutdown has been requested before starting new task group
@@ -200,6 +253,18 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
                     let start_time = UTC::now();
                     task.run_started = Some(start_time);
                     eprintln!("Task '{}' was started at {}", task.name, start_time);
+
+                    // Register with heartbeat system if enabled
+                    let (stdout_buf, stderr_buf) = if heartbeat_interval.is_some() {
+                        let (out, err) = heartbeat::register_task_start(
+                            task.name.clone(),
+                            start_time
+                        );
+                        (Some(out), Some(err))
+                    } else {
+                        (None, None)
+                    };
+
                     {
                         let tx = tx.clone();
                         let args = format_args(&task.task_spec.command, &task.task_spec.arguments);
@@ -209,7 +274,12 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
                             let mut command = Command::new("sh");
                             command.arg("-c");
                             command.arg(args);
-                            let task_result = strategy(&task_name, &mut command);
+                            let task_result = if stdout_buf.is_some() {
+                                // Use execute_os_with_buffers when heartbeat is enabled
+                                execution_strategy::execute_os_with_buffers(&task_name, &mut command, stdout_buf, stderr_buf)
+                            } else {
+                                strategy(&task_name, &mut command)
+                            };
                             tx.send((idx, task_result)).unwrap();
                         });
                     }
@@ -229,8 +299,11 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
 
         if is_first_run {
             if let Some(ref send) = progress_channel {
-                let update = ExecutionUpdate::new(ExecutionState::Running, 
-                                          get_task_snapshot(&tasklist),
+                let snapshot = get_task_snapshot(&tasklist);
+                // Update shared snapshot for heartbeat thread
+                *shared_snapshot.lock().unwrap() = snapshot.clone();
+                let update = ExecutionUpdate::new(ExecutionState::Running,
+                                          snapshot,
                                           Transition::Job( JobTransition::new(Some(ExecutionState::Started), ExecutionState::Running) ));
                 send.send(update).unwrap();
             }
@@ -249,8 +322,11 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
                     })
                     .collect::<Vec<TaskTransition>>();
 
+                let snapshot = get_task_snapshot(&tasklist);
+                // Update shared snapshot for heartbeat thread
+                *shared_snapshot.lock().unwrap() = snapshot.clone();
                 let update = ExecutionUpdate::new(ExecutionState::Running,
-                                                  get_task_snapshot(&tasklist),
+                                                  snapshot,
                                                   Transition::Task(running_task_transitions));
 
                 send.send(update).unwrap();
@@ -350,6 +426,11 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
 
                 tasklist.tasks[task_grp_idx][idx].run_result = Some(task_result);
 
+                // Unregister from heartbeat if enabled
+                if heartbeat_interval.is_some() {
+                    heartbeat::unregister_task_completion(&tasklist.tasks[task_grp_idx][idx].name);
+                }
+
                 if let Some(ref send) = progress_channel {
                     let exec_task_transition =
                         TaskTransition::new(&tasklist.tasks[task_grp_idx][idx].name,
@@ -357,9 +438,34 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
                                             tasklist.tasks[task_grp_idx][idx].state.clone());
                     additional_transitions.insert(0, exec_task_transition);
 
-                    let update = ExecutionUpdate::new(ExecutionState::Running,
-                                                      get_task_snapshot(&tasklist),
-                                                      Transition::Task(additional_transitions));
+                    let snapshot = get_task_snapshot(&tasklist);
+                    // Update shared snapshot for heartbeat thread
+                    *shared_snapshot.lock().unwrap() = snapshot.clone();
+
+                    // Fetch live heartbeat logs for still-running tasks if heartbeat is enabled
+                    let live_logs = if heartbeat_interval.is_some() {
+                        let running = heartbeat::get_running_tasks_with_logs();
+                        if !running.is_empty() {
+                            let heartbeat_data: HeartbeatData = running.iter()
+                                .map(|t| HeartbeatTaskData {
+                                    task_name: t.name.clone(),
+                                    elapsed_seconds: t.elapsed.as_secs(),
+                                    stdout: t.stdout.clone(),
+                                    stderr: t.stderr.clone(),
+                                })
+                                .collect();
+                            Some(heartbeat_data)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    let update = ExecutionUpdate::new_with_logs(ExecutionState::Running,
+                                                                snapshot,
+                                                                Transition::Task(additional_transitions),
+                                                                live_logs);
                     send.send(update).unwrap();
                 }
 
@@ -367,9 +473,16 @@ pub fn execute_factfile<'a, F>(factfile: &'a Factfile,
         }
     }
 
+    // Shutdown heartbeat thread before sending Finished event
+    if let Some((handle, shutdown_flag)) = heartbeat_handle {
+        shutdown_flag.store(true, Ordering::SeqCst);
+        handle.join().expect("Heartbeat thread panicked");
+    }
+
     if let Some(ref send) = progress_channel {
-        let update = ExecutionUpdate::new(ExecutionState::Finished, 
-                                          get_task_snapshot(&tasklist),
+        let snapshot = get_task_snapshot(&tasklist);
+        let update = ExecutionUpdate::new(ExecutionState::Finished,
+                                          snapshot,
                                           Transition::Job( JobTransition::new(Some(ExecutionState::Running), ExecutionState::Finished) ));
         send.send(update).unwrap();
     }

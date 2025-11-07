@@ -141,7 +141,7 @@ fn to_json_valid_against_schema_task_transition_waiting_to_running() {
 fn to_task_states_empty() {
     let empty = vec![];
     let max_stdouterr_size: usize = 10_000;
-    assert!(JobUpdate::to_task_states(&empty, &max_stdouterr_size).is_empty());
+    assert!(JobUpdate::to_task_states(&empty, &max_stdouterr_size, None).is_empty());
 }
 
 #[test]
