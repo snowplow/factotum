@@ -718,3 +718,219 @@ fn execute_sends_noop_skipped_messages() {
 }
 
 // todo write test for rejecting non "shell" execution types
+
+mod heartbeat {
+    use factotum::tests::make_task;
+    use factotum::factfile::*;
+    use factotum::executor::*;
+    use factotum::executor::heartbeat::*;
+    use chrono::{self, UTC};
+    use std::sync::{Arc, Mutex, MutexGuard};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc;
+    use std::thread::{self, JoinHandle};
+    use std::time::Duration;
+
+    // Running tasks are tracked in global state, so these tests must not run concurrently
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock() -> MutexGuard<'static, ()> {
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    // Unregisters the task on drop so a failing test doesn't leak into the others
+    struct RunningTask {
+        name: &'static str,
+    }
+
+    impl Drop for RunningTask {
+        fn drop(&mut self) {
+            unregister_task_completion(self.name);
+        }
+    }
+
+    fn find_task(name: &str) -> Option<TaskHeartbeatData> {
+        get_running_tasks_with_logs().into_iter().find(|t| t.name == name)
+    }
+
+    fn joins_within(handle: JoinHandle<()>, timeout: Duration) -> bool {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = handle.join();
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(timeout).is_ok()
+    }
+
+    fn snapshot() -> TaskSnapshot {
+        let mut ff = Factfile::new("N/A", "test");
+        ff.add_task_obj(&make_task("apple", &vec![]));
+        let tl = get_task_execution_list(&ff, None);
+        get_task_snapshot(&tl)
+    }
+
+    #[test]
+    fn register_task_start_shares_log_buffers() {
+        let _lock = lock();
+        let (stdout, stderr) = register_task_start("hb-buffers".to_string(), UTC::now());
+        let _task = RunningTask { name: "hb-buffers" };
+
+        stdout.lock().unwrap().push_str("out 1\n");
+        stderr.lock().unwrap().push_str("err 1\n");
+
+        let task = find_task("hb-buffers").expect("task should be registered");
+        assert_eq!(task.stdout, "out 1\n");
+        assert_eq!(task.stderr, "err 1\n");
+
+        // Logs are cumulative across snapshots
+        stdout.lock().unwrap().push_str("out 2\n");
+        let task = find_task("hb-buffers").unwrap();
+        assert_eq!(task.stdout, "out 1\nout 2\n");
+        assert_eq!(task.stderr, "err 1\n");
+    }
+
+    #[test]
+    fn get_running_tasks_with_logs_reports_elapsed_time() {
+        let _lock = lock();
+        let start = UTC::now() - chrono::Duration::seconds(5);
+        register_task_start("hb-elapsed".to_string(), start);
+        let _task = RunningTask { name: "hb-elapsed" };
+
+        let task = find_task("hb-elapsed").unwrap();
+        assert_eq!(task.start_time, start);
+        assert!(task.elapsed >= Duration::from_secs(5), "elapsed was {:?}", task.elapsed);
+        assert!(task.elapsed < Duration::from_secs(60), "elapsed was {:?}", task.elapsed);
+    }
+
+    #[test]
+    fn get_running_tasks_with_logs_clamps_future_start_to_zero() {
+        let _lock = lock();
+        register_task_start("hb-future".to_string(), UTC::now() + chrono::Duration::seconds(60));
+        let _task = RunningTask { name: "hb-future" };
+
+        assert_eq!(find_task("hb-future").unwrap().elapsed, Duration::from_secs(0));
+    }
+
+    #[test]
+    fn unregister_task_completion_removes_task() {
+        let _lock = lock();
+        register_task_start("hb-remove".to_string(), UTC::now());
+        register_task_start("hb-keep".to_string(), UTC::now());
+        let _keep = RunningTask { name: "hb-keep" };
+        assert!(find_task("hb-remove").is_some());
+
+        unregister_task_completion("hb-remove");
+
+        assert!(find_task("hb-remove").is_none());
+        assert!(find_task("hb-keep").is_some());
+    }
+
+    #[test]
+    fn unregister_task_completion_ignores_unknown_task() {
+        let _lock = lock();
+        unregister_task_completion("hb-never-registered");
+        assert!(find_task("hb-never-registered").is_none());
+    }
+
+    #[test]
+    fn register_task_start_replaces_task_with_same_name() {
+        let _lock = lock();
+        let (old_stdout, _) = register_task_start("hb-replace".to_string(), UTC::now());
+        let _task = RunningTask { name: "hb-replace" };
+        let (new_stdout, _) = register_task_start("hb-replace".to_string(), UTC::now());
+
+        old_stdout.lock().unwrap().push_str("old");
+        new_stdout.lock().unwrap().push_str("new");
+
+        let matching: Vec<_> = get_running_tasks_with_logs()
+            .into_iter()
+            .filter(|t| t.name == "hb-replace")
+            .collect();
+        assert_eq!(matching.len(), 1);
+        assert_eq!(matching[0].stdout, "new");
+    }
+
+    #[test]
+    fn heartbeat_thread_sends_running_task_logs() {
+        let _lock = lock();
+        let start = UTC::now() - chrono::Duration::seconds(3);
+        let (stdout, stderr) = register_task_start("hb-thread".to_string(), start);
+        let _task = RunningTask { name: "hb-thread" };
+        stdout.lock().unwrap().push_str("hello");
+        stderr.lock().unwrap().push_str("oops");
+
+        let expected_snapshot = snapshot();
+        let shared_snapshot = Arc::new(Mutex::new(expected_snapshot.clone()));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel();
+        let handle = spawn_heartbeat_thread(Duration::from_millis(10), tx, shutdown.clone(), shared_snapshot);
+
+        let update = rx.recv_timeout(Duration::from_secs(5)).expect("expected a heartbeat");
+        shutdown.store(true, Ordering::SeqCst);
+        assert!(joins_within(handle, Duration::from_secs(5)));
+
+        assert_eq!(update.execution_state, ExecutionState::Running);
+        assert_eq!(update.task_snapshot, expected_snapshot);
+        assert!(update.live_task_logs.is_none());
+        match update.transition {
+            Transition::Heartbeat(data) => {
+                assert_eq!(data.len(), 1);
+                assert_eq!(data[0].task_name, "hb-thread");
+                assert_eq!(data[0].stdout, "hello");
+                assert_eq!(data[0].stderr, "oops");
+                assert!(data[0].elapsed_seconds >= 3);
+            }
+            _ => panic!("expected a heartbeat transition"),
+        }
+    }
+
+    #[test]
+    fn heartbeat_thread_skips_when_no_tasks_running() {
+        let _lock = lock();
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel();
+        let handle = spawn_heartbeat_thread(Duration::from_millis(10),
+                                            tx,
+                                            shutdown.clone(),
+                                            Arc::new(Mutex::new(snapshot())));
+
+        let result = rx.recv_timeout(Duration::from_millis(200));
+        shutdown.store(true, Ordering::SeqCst);
+        assert!(joins_within(handle, Duration::from_secs(5)));
+
+        assert!(result.is_err(), "no heartbeat should be sent without running tasks");
+    }
+
+    #[test]
+    fn heartbeat_thread_exits_when_shutdown_flag_set() {
+        let _lock = lock();
+        register_task_start("hb-shutdown".to_string(), UTC::now());
+        let _task = RunningTask { name: "hb-shutdown" };
+
+        let shutdown = Arc::new(AtomicBool::new(true));
+        let (tx, rx) = mpsc::channel();
+        let handle = spawn_heartbeat_thread(Duration::from_millis(10),
+                                            tx,
+                                            shutdown,
+                                            Arc::new(Mutex::new(snapshot())));
+
+        assert!(joins_within(handle, Duration::from_secs(5)));
+        assert!(rx.recv().is_err(), "no heartbeat should be sent after shutdown");
+    }
+
+    #[test]
+    fn heartbeat_thread_exits_when_receiver_dropped() {
+        let _lock = lock();
+        register_task_start("hb-dropped".to_string(), UTC::now());
+        let _task = RunningTask { name: "hb-dropped" };
+
+        let (tx, rx) = mpsc::channel();
+        drop(rx);
+        let handle = spawn_heartbeat_thread(Duration::from_millis(10),
+                                            tx,
+                                            Arc::new(AtomicBool::new(false)),
+                                            Arc::new(Mutex::new(snapshot())));
+
+        assert!(joins_within(handle, Duration::from_secs(5)));
+    }
+}

@@ -2,6 +2,7 @@ Version 0.7.1 (2026-09-27)
 --------------------------
 Convert Github Action versions to hashes (#141)
 Update toolchain to use supported actions (#142)
+Increase unit test coverage (#144)
 
 Version 0.7.0 (2025-11-06)
 --------------------------
